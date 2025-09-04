@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8" />
+<style>
+  body { font: 14px/1.4 system-ui; width: 360px; padding: 12px; }
+  textarea { width: 100%; height: 120px; }
+  .row { display:flex; gap:8px; margin-top:8px; }
+  button { padding:8px 10px; }
+  small { color:#666 }
+</style>
+<h3>레이블→값 JSON</h3>
+<textarea id="json" placeholder='{"번호":"P101v0720","제목":"제목 예시"}'></textarea>
+<div class="row">
+  <input type="file" id="file" accept=".json,application/json" />
+  <button id="run">현재 탭에 적용</button>
+</div>
+<small>팁: 파일필드는 "__PICK__", "text:내용", "data:&lt;mime&gt;;base64,..." 지원</small>
+<script src="popup.js"></script>

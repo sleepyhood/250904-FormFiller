@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8" />
+<h3>옵션</h3>
+<textarea id="opt" style="width:100%;height:200px" placeholder='{"dropzone": ".el-upload-dragger"}'></textarea>
+<button id="save">저장</button>
+<script>
+  chrome.storage.sync.get('form_filler_opts', v => { document.getElementById('opt').value = v.form_filler_opts || ''; });
+  document.getElementById('save').onclick = () => {
+    chrome.storage.sync.set({ form_filler_opts: document.getElementById('opt').value || '' }, () => alert('저장됨'));
+  };
+</script>
