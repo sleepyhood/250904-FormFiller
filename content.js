@@ -12,14 +12,16 @@ function dispatchAll(el) {
   el.blur?.();
 }
 
-function setPlainValue(el, val) {
-  if (el.type === "file") return true; // 보안정책상 직접 세팅 금지(별도 처리)
+function setPlainValue(el, val, labelHint) {
+  if (el.type === "file") return true;
   const proto =
     el.tagName === "TEXTAREA"
       ? HTMLTextAreaElement.prototype
       : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-  setter ? setter.call(el, val ?? "") : (el.value = val ?? "");
+
+  const safe = toFieldString(val, labelHint); // ✅ 여기서 객체 방어
+  setter ? setter.call(el, safe) : (el.value = safe);
   dispatchAll(el);
   return true;
 }
@@ -417,6 +419,23 @@ function findByLabelText(text) {
 
 // ---------- 값 주입 ----------
 async function fillOne(labelText, value) {
+  if (expandAliases(labelText)[0] === "난이도") {
+    const scope = findFormItemByLabel(labelText) || document;
+    const ok = await setElSelectByText(scope, value);
+    return { label: labelText, found: !!scope, filled: ok, type: "el-select" };
+  }
+
+  // fillOne 초반: 배열인데 "언어" 라벨 스코프면 체크박스 그룹 경로
+  if (Array.isArray(value) && expandAliases(labelText)[0] === "언어") {
+    const scope = findFormItemByLabel(labelText) || document;
+    const ok = await setCheckboxGroupByLabels(scope, value);
+    return {
+      label: labelText,
+      found: !!scope,
+      filled: ok,
+      type: "checkbox-group",
+    };
+  }
   // 1) 먼저: 배열이면 태그 위젯 플로우로 처리 (라벨 form-item만 있어도 동작)
   if (Array.isArray(value)) {
     const scope =
@@ -523,11 +542,11 @@ async function fillOne(labelText, value) {
       setRadio(el, value);
       return { label: labelText, found: true, filled: true, type: "radio" };
     }
-    setPlainValue(el, value);
+    setPlainValue(el, value, labelText); // ✅ label 전달
     return { label: labelText, found: true, filled: true, type: "input" };
   }
   if (el.tagName === "TEXTAREA") {
-    setPlainValue(el, value);
+    setPlainValue(el, value, labelText); // ✅
     return { label: labelText, found: true, filled: true, type: "textarea" };
   }
   if (el.tagName === "SELECT") {
@@ -584,15 +603,32 @@ const DOMAIN_RULES = {
       ".simditor-body, .ck-content, .ql-editor",
     ],
     aliases: {
-      번호: ["문제 아이디", "문제 번호", "번호"],
-      제목: ["문제 제목", "제목"],
+      번호: ["문제 아이디", "문제 번호", "번호", "_id"],
+      제목: ["문제 제목", "제목", "title"],
       "문제 설명": ["문제 설명", "설명", "Description"],
-      "입력 설명": ["입력 설명", "입력형식"],
-      "출력 설명": ["출력 설명", "출력형식"],
-      "입력 예시": ["입력 예시", "예시 입력"],
-      "출력 예시": ["출력 예시", "예시 출력"],
-      힌트: ["힌트", "Tip"],
+      "입력 설명": ["입력 설명", "입력형식", "Input", "Input Description"],
+      "출력 설명": ["출력 설명", "출력형식", "Output", "Output Description"],
+      난이도: ["난이도", "Difficulty"],
+      "보이기 설정": ["보이기 설정", "공개", "Visibility"],
+      "소스코드 공개": ["소스코드 공개", "코드 공개", "Source Visible"],
+      Tag: ["Tag", "태그", "Tags"],
+      언어: ["언어", "Languages", "Language"],
+      "입력 예시": ["입력 예시", "예시 입력", "Sample Input"],
+      "출력 예시": ["출력 예시", "예시 출력", "Sample Output"],
+      힌트: ["힌트", "Tip", "Hint"],
+      "코드 템플릿": ["코드 템플릿", "템플릿", "Code Template"],
+      "스페셜 저지": ["스페셜 저지", "Special Judge", "SPJ"],
+      유형: ["유형", "Type", "모드"],
+      "입/출력 모드": ["입/출력 모드", "IO 모드", "I/O Mode"],
+      "테스트 케이스": [
+        "테스트 케이스",
+        "케이스 업로드",
+        "Testcases",
+        "Upload Cases",
+      ],
+      소스코드: ["소스코드", "Source Code"],
     },
+
     preferredByLabel: {
       "문제 설명":
         ".simditor-body, .ck-content, .ql-editor, [contenteditable='true'], .public-DraftEditor-content, .ProseMirror, div p",
@@ -601,6 +637,7 @@ const DOMAIN_RULES = {
       "출력 설명":
         ".simditor-body, .ck-content, .ql-editor, [contenteditable='true'], .public-DraftEditor-content, .ProseMirror, div p",
       힌트: ".simditor-body, .ck-content, .ql-editor, [contenteditable='true'], .public-DraftEditor-content, .ProseMirror, div p",
+      "테스트 케이스": "input.el-upload__input",
     },
     // 필요하면 dropzone: ".el-upload-dragger"
   },
@@ -666,6 +703,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const pairs = Array.isArray(raw)
         ? raw
         : Object.entries(raw).map(([label, value]) => ({ label, value }));
+
+      // 메시지 핸들러에서 pairs 처리 전에 별도 키로 꺼내 처리하거나,
+      // fillOne 분기 대신 최상단에서 한 번 처리:
+      const samples = raw["샘플"];
+      if (Array.isArray(samples) && samples.length) await fillSamples(samples);
 
       // 액션/필드 분리: action:저장 → 버튼 클릭
       const fieldPairs = [];
@@ -1012,4 +1054,107 @@ function getDropTargetsIn(scope) {
   return root.querySelectorAll(
     ".el-upload__inner, .el-upload-dragger, .el-upload"
   );
+}
+
+async function setElSelectByText(scope, text) {
+  const root =
+    scope.querySelector(".el-select") || scope.closest(".el-select") || scope;
+  const input = root.querySelector(".el-input__inner");
+  if (!input) return false;
+
+  // 드롭다운 열기
+  clickSeq(input);
+  // 드롭다운 아이템 찾기
+  const list = document.querySelector(".el-select-dropdown");
+  if (!list) return false;
+  const item = [
+    ...list.querySelectorAll(".el-select-dropdown__item span"),
+  ].find((sp) => EQ(sp.textContent, text) || HAS(sp.textContent, text));
+  if (!item) return false;
+
+  clickSeq(item);
+  dispatchAll(input);
+  return true;
+}
+
+async function setCheckboxGroupByLabels(scope, values) {
+  const setWanted = new Set(values.map((v) => norm(v)));
+  const boxes = scope.querySelectorAll(".el-checkbox");
+  if (!boxes.length) return false;
+  for (const box of boxes) {
+    const label = norm(box.textContent || "");
+    const input = box.querySelector('input[type="checkbox"]');
+    const shouldCheck = setWanted.has(label);
+    const isChecked = box.classList.contains("is-checked") || input?.checked;
+    if (shouldCheck !== isChecked) {
+      clickSeq(box); // 라벨 전체 클릭이 Element UI에 더 안전
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  }
+  return true;
+}
+
+async function fillSamples(samples) {
+  // 1개는 기본 카드에, 2개 이상은 버튼 눌러가며 생성
+  const addBtn = document.querySelector(".add-samples,.add-sample-btn button");
+  for (let i = 0; i < samples.length; i++) {
+    if (i > 0 && addBtn) {
+      clickSeq(addBtn);
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    const card = [...document.querySelectorAll(".accordion .body")][i];
+    if (!card) break;
+    const inBox =
+      card.querySelector('textarea[placeholder*="입력"]') ||
+      card.querySelector("textarea");
+    const outBox = [...card.querySelectorAll("textarea")].find(
+      (t) => t !== inBox
+    );
+    if (inBox) setPlainValue(inBox, samples[i]["입력 예시"] ?? "");
+    if (outBox) setPlainValue(outBox, samples[i]["출력 예시"] ?? "");
+  }
+  return true;
+}
+
+async function fillScoreTable(rows) {
+  const table = document.querySelector(".el-table");
+  const addRowBtn = document.querySelector(".add-row,.el-button.add-row"); // 실제 버튼 셀렉터 필요
+  if (!table || !addRowBtn) return false;
+
+  for (const r of rows) {
+    clickSeq(addRowBtn);
+    await new Promise((res) => setTimeout(res, 50));
+    // 새 행의 3개 셀 내부 입력창에 값 주입 (실제 셀렉터에 맞게 조정)
+    const lastRow = table.querySelector("tbody tr:last-child");
+    const ins = lastRow?.querySelectorAll("input,textarea");
+    if (ins?.length >= 3) {
+      setPlainValue(ins[0], r["입력"] ?? "");
+      setPlainValue(ins[1], r["출력"] ?? "");
+      setPlainValue(ins[2], String(r["점수"] ?? ""));
+    }
+  }
+  return true;
+}
+
+function toFieldString(v, labelHint) {
+  if (v == null) return "";
+  if (typeof v !== "object") return String(v);
+
+  // 1) 흔한 키 우선(match by label + common keys)
+  const preferredKeysByLabel = {
+    번호: ["번호", "_id", "id", "value", "text", "label"],
+    제목: ["제목", "title", "name", "text", "label", "value"],
+  };
+  const commons = ["value", "text", "label", "id", "_id", "name"];
+  const pickOrder = [...(preferredKeysByLabel[labelHint] || []), ...commons];
+
+  for (const k of pickOrder) {
+    if (k in v && typeof v[k] !== "object") return String(v[k]);
+  }
+  // 2) 그래도 못 고르면 JSON 문자열화(최후 수단)
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
 }
