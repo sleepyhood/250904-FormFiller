@@ -1,17 +1,135 @@
 <!doctype html>
 <meta charset="utf-8" />
+<title>FormFiller</title>
 <style>
-  body { font: 14px/1.4 system-ui; width: 360px; padding: 12px; }
-  textarea { width: 100%; height: 120px; }
-  .row { display:flex; gap:8px; margin-top:8px; }
-  button { padding:8px 10px; }
-  small { color:#666 }
+  :root{
+    --bg:#0b0c0f; --panel:#11131a; --muted:#8b93a7; --fg:#e9edf5; --line:#202431;
+    --primary:#6ea8fe; --primary-ink:#0b2a6f; --ring:rgba(110,168,254,.35);
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#ffffff; --panel:#f7f8fb; --muted:#667084; --fg:#0b1220; --line:#e6e8ef;
+      --primary:#346aff; --primary-ink:#ecf2ff; --ring:rgba(52,106,255,.25);
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    width:380px; padding:14px; font:14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", Arial, sans-serif;
+    color:var(--fg); background:var(--bg);
+  }
+  h3{margin:0 0 10px 0; font-size:14px; font-weight:600; color:var(--muted); letter-spacing:.2px}
+  .app-title{display:flex; align-items:center; gap:8px; margin-bottom:12px}
+  .app-title .logo{width:22px; height:22px; display:grid; place-items:center; border-radius:6px; background:var(--primary); color:white}
+  .app-title h2{margin:0; font-size:16px; font-weight:700; color:var(--fg)}
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:10px;
+    box-shadow:0 0 0 1px rgba(0,0,0,.02), 0 6px 14px rgba(0,0,0,.08);
+  }
+  textarea{
+    width:100%; min-height:120px; max-height:280px; resize:vertical;
+    padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:#0000;
+    color:var(--fg); font:12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    outline:none; transition:border .15s, box-shadow .15s, background .2s;
+  }
+  textarea:focus{border-color:var(--primary); box-shadow:0 0 0 4px var(--ring)}
+  .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+  .row.stretch > *{flex:1}
+  .btn{
+    display:inline-flex; align-items:center; gap:8px; padding:8px 10px; border-radius:10px; border:1px solid var(--line);
+    background:#0000; color:var(--fg); cursor:pointer; transition:background .15s, border .15s, transform .02s;
+    user-select:none; -webkit-user-select:none;
+  }
+  .btn:hover{background:rgba(255,255,255,.04)}
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{
+    background:linear-gradient(180deg, var(--primary), calc(var(--primary) - 10%));
+    color:white; border-color:transparent;
+  }
+  .btn-primary:hover{filter:brightness(.98)}
+  .btn-ghost{background:#0000}
+  .btn-sm{padding:6px 9px; border-radius:9px}
+  .icon{width:16px; height:16px; display:inline-block}
+  .help{display:block; margin-top:8px; color:var(--muted); font-size:12px}
+  .divider{height:1px; background:var(--line); margin:10px 0}
+  .cluster{display:flex; gap:8px; flex-wrap:wrap}
+  /* 파일 입력 커스텀 */
+  input[type="file"]{position:absolute; left:-9999px}
+  .file-wrap{display:flex; align-items:center; gap:8px}
+  .file-name{font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px}
+  /* 배지 */
+  .badge{font-size:11px; padding:2px 6px; border-radius:999px; background:var(--line); color:var(--muted)}
 </style>
-<h3>레이블→값 JSON</h3>
-<textarea id="json" placeholder='{"번호":"P101v0720","제목":"제목 예시"}'></textarea>
-<div class="row">
-  <input type="file" id="file" accept=".json,application/json" />
-  <button id="run">현재 탭에 적용</button>
-</div>
-<small>팁: 파일필드는 "__PICK__", "text:내용", "data:&lt;mime&gt;;base64,..." 지원</small>
+
+<header class="app-title">
+  <div class="logo" aria-hidden="true">⚡</div>
+  <h2>FormFiller</h2>
+  <span class="badge">v1</span>
+</header>
+
+<section class="card">
+  <h3>레이블 → 값 JSON</h3>
+  <textarea id="json" placeholder='{"번호":"P101v0720","제목":"제목 예시"}'></textarea>
+
+  <div class="row" style="margin-top:8px">
+    <div class="file-wrap">
+      <label for="file" class="btn btn-sm btn-ghost" title="JSON 파일 불러오기">
+        <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 20h14a2 2 0 0 0 2-2V9.828a2 2 0 0 0-.586-1.414l-4.828-4.828A2 2 0 0 0 14.172 3H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Zm9-14 4 4h-4V6Z"/></svg>
+        파일 선택
+      </label>
+      <input type="file" id="file" accept=".json,application/json" />
+      <span id="fileName" class="file-name">선택된 파일 없음</span>
+    </div>
+
+    <div class="cluster" style="margin-left:auto">
+      <button id="run" class="btn btn-primary" title="현재 탭 폼에 JSON 적용">
+        <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7L8 5Z"/></svg>
+        현재 탭에 적용
+      </button>
+    </div>
+  </div>
+
+  <small class="help">팁: 파일필드는 <code>__PICK__</code>, <code>text:내용</code>, <code>data:&lt;mime&gt;;base64,...</code> 지원</small>
+</section>
+
+<div class="divider"></div>
+
+<section class="card">
+  <h3>BOJ 추출</h3>
+  <div class="row stretch" style="margin-top:4px">
+    <button id="btn-extract-boj-copy" class="btn">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 7V5a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2h-3M8 7h7V3M4 7h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/></svg>
+      BOJ → JSON 추출(복사)
+    </button>
+    <button id="btn-fill-from-boj" class="btn">
+      <svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 7v4H5V7h14Zm0 6v4H5v-4h14Z"/></svg>
+      최근 BOJ 추출로 폼 채우기
+    </button>
+
+    <button id="btn-extract-boj-images-copy" class="btn">BOJ 이미지 URL 복사</button>
+
+  </div>
+</section>
+
+<script src="popup.extract.js"></script>
 <script src="popup.js"></script>
+<script src="popup.preview.js"></script>
+<script>
+  // 작은 UX 보완: 파일명 표시 + textarea 내용 길이로 버튼 상태 힌트(선택)
+  (function(){
+    const file = document.getElementById('file');
+    const name = document.getElementById('fileName');
+    const run  = document.getElementById('run');
+    const ta   = document.getElementById('json');
+
+    file?.addEventListener('change', () => {
+      const f = file.files?.[0];
+      name.textContent = f ? f.name : '선택된 파일 없음';
+    });
+
+    // 내용 없을 때도 실행은 가능하지만, 시각 힌트(연하게)
+    const tweak = () => run.style.opacity = ta.value.trim() ? '1' : '.9';
+    ta?.addEventListener('input', tweak);
+    tweak();
+  })();
+</script>
